@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.db
+.venv/
+eval/report.json
+chaos/reports/
+.DS_Store
+*.env
+.env.*
+

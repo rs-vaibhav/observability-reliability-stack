@@ -1,0 +1,28 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: "null"
+  group_by: [alertname, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # Every alert goes to the AIOps triage agent (sister project), which correlates and
+    # creates an ITSM-style ticket. Critical ones would also page on-call.
+    - receiver: triage-agent
+      matchers: ['severity=~"critical|warning"']
+      continue: true
+
+receivers:
+  - name: "null"
+  - name: triage-agent
+    webhook_configs:
+      - url: http://host.docker.internal:8080/alerts
+        send_resolved: true
+
+inhibit_rules:
+  # if the service is down, don't also fire burn-rate / latency alerts for it
+  - source_matchers: ['alertname="ServiceDown"']
+    target_matchers: ['alertname=~"SLO.*|HighLatency"']
+    equal: [service]

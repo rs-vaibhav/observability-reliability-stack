@@ -1,0 +1,12 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: reliability
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - { containerPort: 30080, hostPort: 8000 }   # orders-service
+      - { containerPort: 30300, hostPort: 3000 }   # grafana
+      - { containerPort: 30090, hostPort: 9090 }   # prometheus
+  - role: worker
+  - role: worker
+  - role: worker

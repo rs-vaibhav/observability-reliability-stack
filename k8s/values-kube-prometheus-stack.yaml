@@ -1,0 +1,43 @@
+grafana:
+  adminPassword: admin
+  service:
+    type: NodePort
+    nodePort: 30300
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+    datasources:
+      defaultDatasourceEnabled: true
+  additionalDataSources:
+    - name: Loki
+      uid: loki
+      type: loki
+      url: http://loki-gateway.monitoring.svc.cluster.local
+
+prometheus:
+  service:
+    type: NodePort
+    nodePort: 30090
+  prometheusSpec:
+    retention: 7d
+    # pick up ServiceMonitors / PrometheusRules from every namespace
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 200m, memory: 512Mi }
+
+alertmanager:
+  config:
+    route:
+      receiver: "null"
+      group_by: [alertname, service]
+      routes:
+        - receiver: triage-agent
+          matchers: ['severity=~"critical|warning"']
+    receivers:
+      - name: "null"
+      - name: triage-agent
+        webhook_configs:
+          - url: http://triage-agent.aiops.svc.cluster.local:8080/alerts
+            send_resolved: true

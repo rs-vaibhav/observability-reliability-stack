@@ -1,0 +1,16 @@
+# Kubernetes-level alerts (need kube-state-metrics, shipped with kube-prometheus-stack).
+groups:
+  - name: orders-k8s
+    rules:
+      - alert: PodCrashLooping
+        expr: increase(kube_pod_container_status_restarts_total{namespace="shop"}[10m]) > 3
+        labels: { severity: warning, service: orders-service }
+        annotations:
+          summary: "{{ $labels.pod }} restarted {{ $value | humanize }} times in 10m"
+
+      - alert: DeploymentReplicasMismatch
+        expr: kube_deployment_spec_replicas{namespace="shop"} != kube_deployment_status_replicas_available{namespace="shop"}
+        for: 5m
+        labels: { severity: warning, service: orders-service }
+        annotations:
+          summary: "{{ $labels.deployment }} has unavailable replicas for 5m"

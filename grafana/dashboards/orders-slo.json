@@ -1,0 +1,108 @@
+{
+  "uid": "orders-slo",
+  "title": "orders-service - RED & SLO",
+  "tags": ["slo", "red", "orders"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(http_requests_total, service)",
+        "current": { "text": "orders-service", "value": "orders-service" },
+        "refresh": 2
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Chaos injections",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "enable": true,
+        "iconColor": "orange",
+        "expr": "{service=\"$service\"} |= \"chaos settings changed\""
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Availability (30d)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "1 - service:sli_errors:ratio_rate30d{service=\"$service\"}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3,
+        "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0.995 } ] } } }
+    },
+    {
+      "id": 2, "type": "gauge", "title": "Error budget remaining (SLO 99.5%)",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "service:error_budget_remaining:ratio{service=\"$service\"}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1,
+        "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.25 }, { "color": "green", "value": 0.5 } ] } } }
+    },
+    {
+      "id": 3, "type": "stat", "title": "p95 latency (SLO 300 ms)",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "service:http_latency_seconds:p95_5m{service=\"$service\"}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s",
+        "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.3 } ] } } }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Firing alerts",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } } }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Rate - requests/s by status",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum by (code) (rate(http_requests_total{service=\"$service\"}[1m]))", "legendFormat": "{{code}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Errors - 5xx ratio vs fast-burn threshold",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "service:sli_errors:ratio_rate5m{service=\"$service\"}", "legendFormat": "5xx ratio (5m)", "refId": "A" },
+        { "expr": "service:sli_errors:ratio_rate1h{service=\"$service\"}", "legendFormat": "5xx ratio (1h)", "refId": "B" },
+        { "expr": "vector(14.4 * 0.005)", "legendFormat": "page threshold (14.4x burn)", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" } }
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Duration - latency percentiles",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"$service\"}[1m])))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"$service\"}[1m])))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"$service\"}[1m])))", "legendFormat": "p99", "refId": "C" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(dependency_duration_seconds_bucket{service=\"$service\"}[1m])))", "legendFormat": "inventory dependency p95", "refId": "D" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Saturation - in-flight requests",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(http_requests_in_flight{service=\"$service\"})", "legendFormat": "in flight", "refId": "A" }]
+    },
+    {
+      "id": 9, "type": "logs", "title": "Error logs (Loki)",
+      "gridPos": { "x": 0, "y": 21, "w": 24, "h": 9 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{ "expr": "{service=\"$service\", level=~\"ERROR|WARNING\"} | json", "refId": "A" }],
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+    }
+  ]
+}

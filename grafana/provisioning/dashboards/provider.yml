@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: reliability
+    folder: Reliability
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

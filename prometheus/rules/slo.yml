@@ -1,0 +1,112 @@
+# SLOs for orders-service
+#   Availability: 99.5% of requests return non-5xx over 30 days   -> error budget 0.5%
+#   Latency:      95% of requests complete in < 300 ms over 30 days -> "slow" budget 5%
+#
+# Alerting follows the multi-window, multi-burn-rate method from the Google SRE Workbook:
+#   page   : 14.4x burn over 1h (and 5m)  -> 2% of the monthly budget gone in 1 hour
+#   page   :  6x   burn over 6h (and 30m) -> 5% of the budget gone in 6 hours
+#   ticket :  3x   burn over 1d (and 2h)
+#   ticket :  1x   burn over 3d (and 6h)
+# The short window makes the alert resolve quickly once the problem is fixed.
+groups:
+  - name: orders-slo-recording
+    interval: 30s
+    rules:
+      - record: service:http_requests:rate5m
+        expr: sum by (service) (rate(http_requests_total[5m]))
+
+      # ---- availability SLI: ratio of 5xx responses ----
+      - record: service:sli_errors:ratio_rate5m
+        expr: sum by (service) (rate(http_requests_total{code=~"5.."}[5m])) / sum by (service) (rate(http_requests_total[5m]))
+      - record: service:sli_errors:ratio_rate30m
+        expr: sum by (service) (rate(http_requests_total{code=~"5.."}[30m])) / sum by (service) (rate(http_requests_total[30m]))
+      - record: service:sli_errors:ratio_rate1h
+        expr: sum by (service) (rate(http_requests_total{code=~"5.."}[1h])) / sum by (service) (rate(http_requests_total[1h]))
+      - record: service:sli_errors:ratio_rate2h
+        expr: sum by (service) (rate(http_requests_total{code=~"5.."}[2h])) / sum by (service) (rate(http_requests_total[2h]))
+      - record: service:sli_errors:ratio_rate6h
+        expr: sum by (service) (rate(http_requests_total{code=~"5.."}[6h])) / sum by (service) (rate(http_requests_total[6h]))
+      - record: service:sli_errors:ratio_rate1d
+        expr: sum by (service) (rate(http_requests_total{code=~"5.."}[1d])) / sum by (service) (rate(http_requests_total[1d]))
+      - record: service:sli_errors:ratio_rate3d
+        expr: sum by (service) (rate(http_requests_total{code=~"5.."}[3d])) / sum by (service) (rate(http_requests_total[3d]))
+      - record: service:sli_errors:ratio_rate30d
+        expr: sum by (service) (rate(http_requests_total{code=~"5.."}[30d])) / sum by (service) (rate(http_requests_total[30d]))
+
+      # ---- latency SLI: ratio of requests slower than 300 ms ----
+      - record: service:sli_slow:ratio_rate5m
+        expr: 1 - (sum by (service) (rate(http_request_duration_seconds_bucket{le="0.3"}[5m])) / sum by (service) (rate(http_request_duration_seconds_count[5m])))
+      - record: service:sli_slow:ratio_rate30m
+        expr: 1 - (sum by (service) (rate(http_request_duration_seconds_bucket{le="0.3"}[30m])) / sum by (service) (rate(http_request_duration_seconds_count[30m])))
+      - record: service:sli_slow:ratio_rate1h
+        expr: 1 - (sum by (service) (rate(http_request_duration_seconds_bucket{le="0.3"}[1h])) / sum by (service) (rate(http_request_duration_seconds_count[1h])))
+      - record: service:sli_slow:ratio_rate6h
+        expr: 1 - (sum by (service) (rate(http_request_duration_seconds_bucket{le="0.3"}[6h])) / sum by (service) (rate(http_request_duration_seconds_count[6h])))
+
+      - record: service:http_latency_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m])))
+
+      # remaining error budget over 30d (1 = untouched, 0 = exhausted, negative = SLO breached)
+      - record: service:error_budget_remaining:ratio
+        expr: 1 - (service:sli_errors:ratio_rate30d / 0.005)
+
+  - name: orders-slo-alerts
+    rules:
+      - alert: SLOErrorBudgetBurn
+        expr: |
+          (service:sli_errors:ratio_rate1h > (14.4 * 0.005) and service:sli_errors:ratio_rate5m > (14.4 * 0.005))
+          or
+          (service:sli_errors:ratio_rate6h > (6 * 0.005) and service:sli_errors:ratio_rate30m > (6 * 0.005))
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: "{{ $labels.service }} is burning its availability error budget fast"
+          description: "5xx ratio {{ $value | humanizePercentage }} - at this rate the 30-day budget (0.5%) is gone in under 2 days."
+          runbook_url: https://github.com/<you>/observability-reliability-stack/blob/main/runbooks/slo-error-budget-burn.md
+
+      - alert: SLOErrorBudgetBurnSlow
+        expr: |
+          (service:sli_errors:ratio_rate1d > (3 * 0.005) and service:sli_errors:ratio_rate2h > (3 * 0.005))
+          or
+          (service:sli_errors:ratio_rate3d > 0.005 and service:sli_errors:ratio_rate6h > 0.005)
+        for: 15m
+        labels:
+          severity: warning
+          slo: availability
+        annotations:
+          summary: "{{ $labels.service }} is slowly burning its error budget"
+          description: "Open a ticket; the SLO will be missed this month if nothing changes."
+
+      - alert: SLOLatencyBurn
+        expr: |
+          (service:sli_slow:ratio_rate1h > (14.4 * 0.05) and service:sli_slow:ratio_rate5m > (14.4 * 0.05))
+          or
+          (service:sli_slow:ratio_rate6h > (6 * 0.05) and service:sli_slow:ratio_rate30m > (6 * 0.05))
+        for: 2m
+        labels:
+          severity: critical
+          slo: latency
+        annotations:
+          summary: "{{ $labels.service }} latency SLO burning (too many requests > 300 ms)"
+          description: "{{ $value | humanizePercentage }} of requests slower than 300 ms."
+          runbook_url: https://github.com/<you>/observability-reliability-stack/blob/main/runbooks/high-latency.md
+
+      - alert: HighLatency
+        expr: service:http_latency_seconds:p95_5m > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} p95 latency {{ $value | humanizeDuration }} (SLO 300 ms)"
+
+      - alert: ServiceDown
+        expr: up{job="orders-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: orders-service
+        annotations:
+          summary: "Prometheus cannot scrape {{ $labels.instance }}"
+          runbook_url: https://github.com/<you>/observability-reliability-stack/blob/main/runbooks/service-down.md

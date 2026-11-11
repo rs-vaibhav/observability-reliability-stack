@@ -1,0 +1,56 @@
+# Unit tests for the alert rules:  promtool test rules prometheus/tests/slo_test.yml
+rule_files:
+  - ../rules/slo.yml
+
+evaluation_interval: 30s
+
+tests:
+  # 10% of requests fail for an hour -> fast burn must page
+  - interval: 30s
+    input_series:
+      - series: 'http_requests_total{service="orders-service",method="POST",route="/orders",code="201"}'
+        values: '0+270x180'
+      - series: 'http_requests_total{service="orders-service",method="POST",route="/orders",code="503"}'
+        values: '0+30x180'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              service: orders-service
+              severity: critical
+              slo: availability
+            exp_annotations:
+              summary: "orders-service is burning its availability error budget fast"
+              description: "5xx ratio 10% - at this rate the 30-day budget (0.5%) is gone in under 2 days."
+              runbook_url: https://github.com/<you>/observability-reliability-stack/blob/main/runbooks/slo-error-budget-burn.md
+
+  # 0.3% errors is inside the 0.5% budget -> no page
+  - interval: 30s
+    input_series:
+      - series: 'http_requests_total{service="orders-service",method="POST",route="/orders",code="201"}'
+        values: '0+997x180'
+      - series: 'http_requests_total{service="orders-service",method="POST",route="/orders",code="503"}'
+        values: '0+3x180'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOErrorBudgetBurn
+        exp_alerts: []
+
+  # target down for 2 minutes -> ServiceDown
+  - interval: 30s
+    input_series:
+      - series: 'up{job="orders-service",instance="orders-service:8000"}'
+        values: '1 1 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ServiceDown
+        exp_alerts:
+          - exp_labels:
+              job: orders-service
+              instance: orders-service:8000
+              service: orders-service
+              severity: critical
+            exp_annotations:
+              summary: "Prometheus cannot scrape orders-service:8000"
+              runbook_url: https://github.com/<you>/observability-reliability-stack/blob/main/runbooks/service-down.md

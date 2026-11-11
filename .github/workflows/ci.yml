@@ -1,0 +1,38 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r app/requirements.txt httpx pytest ruff
+      - run: ruff check app loadgen chaos
+      - run: cd app && pytest -q
+
+  monitoring-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install promtool, amtool, loki, promtail, kubeconform
+        run: |
+          curl -sSL https://github.com/prometheus/prometheus/releases/download/v2.55.1/prometheus-2.55.1.linux-amd64.tar.gz | tar xz
+          curl -sSL https://github.com/prometheus/alertmanager/releases/download/v0.27.0/alertmanager-0.27.0.linux-amd64.tar.gz | tar xz
+          curl -sSLO https://github.com/grafana/loki/releases/download/v3.2.1/loki-linux-amd64.zip && unzip -q loki-linux-amd64.zip
+          curl -sSLO https://github.com/grafana/loki/releases/download/v3.2.1/promtail-linux-amd64.zip && unzip -q promtail-linux-amd64.zip
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+      - name: Prometheus rules - syntax and unit tests
+        run: |
+          ./prometheus-2.55.1.linux-amd64/promtool check rules prometheus/rules/*.yml k8s/k8s-rules.yml
+          ./prometheus-2.55.1.linux-amd64/promtool test rules prometheus/tests/*.yml
+      - run: ./alertmanager-0.27.0.linux-amd64/amtool check-config alertmanager/alertmanager.yml
+      - run: ./loki-linux-amd64 -config.file=loki/loki.yml -verify-config
+      - run: ./promtail-linux-amd64 -config.file=loki/promtail.yml -check-syntax
+      - run: python -c "import json; json.load(open('grafana/dashboards/orders-slo.json'))"
+      - run: ./kubeconform -strict -summary -ignore-missing-schemas k8s/app.yaml
+      - run: docker compose config -q
