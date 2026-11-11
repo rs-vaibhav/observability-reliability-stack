@@ -64,7 +64,7 @@ groups:
         annotations:
           summary: "{{ $labels.service }} is burning its availability error budget fast"
           description: "5xx ratio {{ $value | humanizePercentage }} - at this rate the 30-day budget (0.5%) is gone in under 2 days."
-          runbook_url: https://github.com/<you>/observability-reliability-stack/blob/main/runbooks/slo-error-budget-burn.md
+          runbook_url: https://github.com/rs-vaibhav/observability-reliability-stack/blob/main/runbooks/slo-error-budget-burn.md
 
       - alert: SLOErrorBudgetBurnSlow
         expr: |
@@ -91,7 +91,7 @@ groups:
         annotations:
           summary: "{{ $labels.service }} latency SLO burning (too many requests > 300 ms)"
           description: "{{ $value | humanizePercentage }} of requests slower than 300 ms."
-          runbook_url: https://github.com/<you>/observability-reliability-stack/blob/main/runbooks/high-latency.md
+          runbook_url: https://github.com/rs-vaibhav/observability-reliability-stack/blob/main/runbooks/high-latency.md
 
       - alert: HighLatency
         expr: service:http_latency_seconds:p95_5m > 0.3
@@ -109,4 +109,4 @@ groups:
           service: orders-service
         annotations:
           summary: "Prometheus cannot scrape {{ $labels.instance }}"
-          runbook_url: https://github.com/<you>/observability-reliability-stack/blob/main/runbooks/service-down.md
+          runbook_url: https://github.com/rs-vaibhav/observability-reliability-stack/blob/main/runbooks/service-down.md
